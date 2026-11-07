@@ -2,13 +2,15 @@
 //! verdict is no longer trustworthy; reads must check `revoked`).
 
 use anchor_lang::prelude::*;
+use solana_sha256_hasher::hash;
 
 use crate::constants::*;
 use crate::error::UhakikiError;
 use crate::state::*;
+use anchor_lang::{AnchorDeserialize, AnchorSerialize};
 
 #[derive(Accounts)]
-#[instruction(asset_id: String)]
+#[instruction(asset_id: String, reason: String)]
 pub struct RevokeAttestation<'info> {
     #[account(mut)]
     pub issuer: Signer<'info>,
@@ -17,18 +19,18 @@ pub struct RevokeAttestation<'info> {
     /// reach the original attestation, and ownership is re-checked below.
     #[account(
         mut,
-        seeds = [ATTESTATION_SEED, issuer.key().as_ref(), asset_id.as_bytes()],
+        seeds = [ATTESTATION_SEED, issuer.key().as_ref(), solana_sha256_hasher::hash(asset_id.as_bytes()).as_ref()],
         bump
     )]
-    pub attestation: UncheckedAccount<'info>,
+    pub attestation: Account<'info, Attestation>,
 }
 
 pub fn handle_revoke(ctx: Context<RevokeAttestation>, asset_id: String, reason: String) -> Result<()> {
     let info = ctx.accounts.attestation.to_account_info();
     require!(info.data_len() > 0, UhakikiError::NotInitialized);
-    require!(info.owner == &crate::ID(), UhakikiError::ForeignAttestation);
+    require!(*info.owner == crate::ID, UhakikiError::ForeignAttestation);
 
-    let mut att = Account::<Attestation>::try_from(&info)?;
+    let mut att = Attestation::deserialize(&mut &info.try_borrow_data()?[8..])?;
     require!(!att.revoked, UhakikiError::AttestationRevoked);
     att.revoked = true;
     let mut buf: Vec<u8> = Vec::with_capacity(8 + Attestation::INIT_SPACE);

@@ -1,8 +1,12 @@
 //! Uhakiki on-chain constants.
 
+use anchor_lang::prelude::*;
 /// PDA seed for the attestation account.
 #[constant]
 pub const ATTESTATION_SEED: &[u8] = b"attestation";
+
+#[constant]
+pub const ASSET_CLASS_INVOICE: &str = "invoice";
 
 #[constant]
 pub const MAX_ASSET_ID_LEN: usize = 64;

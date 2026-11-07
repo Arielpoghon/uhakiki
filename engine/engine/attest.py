@@ -66,12 +66,12 @@ def attest(result) -> dict:
     http = httpx.Client(timeout=30)
 
     asset_id = result.asset_id
-    seeds = [SEED, bytes(kp.pubkey()), asset_id.encode("utf-8")]
-    pda, bump = Pubkey.find_program_address(seeds, PROGRAM_ID)
+    # PDA seeds mirror the program: asset_id is hashed (seed length cap 32)
+    id_hash = hashlib.sha256(asset_id.encode("utf-8")).digest()
+    pda, bump = Pubkey.find_program_address([SEED, bytes(kp.pubkey()), id_hash], PROGRAM_ID)
 
     data = _discriminator("issue_attestation")
     data += _borsh_string(asset_id)
-    data += _borsh_string("invoice")
     data += bytes([VERDICT_INDEX[result.verdict.value]])
     data += bytes.fromhex(result.rule_pack_hash)
     data += _borsh_string("https://uhakiki.demo/rationale/" + asset_id)
@@ -92,9 +92,11 @@ def attest(result) -> dict:
     blockhash = Hash.from_string(blockhash_raw)
     msg = Message.new_with_blockhash([ix], kp.pubkey(), blockhash)
     tx = Transaction([kp], msg, blockhash)
-    sig = _rpc(http, "sendTransaction",
-               [str(tx), {"encoding": "base64", "skip_preflight": False}])
-    signature = sig
+    import base64 as _b64
+
+    encoded = _b64.b64encode(bytes(tx)).decode()
+    signature = _rpc(http, "sendTransaction",
+                     [encoded, {"encoding": "base64", "skip_preflight": False}])
     return {
         "mode": "onchain",
         "signature": signature,

@@ -21,14 +21,13 @@ pub mod uhakiki {
     pub fn issue_attestation(
         ctx: Context<IssueAttestation>,
         asset_id: String,
-        asset_class: String,
         verdict: Verdict,
         rule_pack_hash: [u8; 32],
         rationale_uri: String,
         issuer_ref: Pubkey,
     ) -> Result<()> {
         crate::instructions::issue::handle_issue(
-            ctx, asset_id, asset_class, verdict, rule_pack_hash, rationale_uri, issuer_ref,
+            ctx, asset_id, verdict, rule_pack_hash, rationale_uri, issuer_ref,
         )
     }
 

@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 
 from .evaluator import screen
 from .loader import load_pack
@@ -34,6 +35,11 @@ app = FastAPI(
 
 
 PROGRAM_ID = "FEvabxdQJsdDaQuHi9fzWH7MvUygpMUS7DWUtmQkGVtd"
+
+
+@app.get("/", include_in_schema=False)
+def index() -> FileResponse:
+    return FileResponse(REPO_ROOT / "app" / "index.html")
 
 
 @app.get("/health")

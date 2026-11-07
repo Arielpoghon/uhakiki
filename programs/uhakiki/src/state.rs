@@ -4,7 +4,7 @@ use anchor_lang::prelude::*;
 
 /// The verdict the deterministic rules engine produced. Uhakiki never
 /// invents verdicts on-chain — it records what the engine decided.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 pub enum Verdict {
     Allow,
     Restrict,

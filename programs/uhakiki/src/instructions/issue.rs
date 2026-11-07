@@ -1,32 +1,35 @@
 //! issue_attestation — upsert one attestation PDA per (issuer, asset_id).
 //!
-//! The account is created via a direct system-program CPI when empty and
-//! overwritten in place afterwards, so verdicts can flip as new evidence
-//! arrives without re-deriving or reallocating anything (space is allocated
-//! at max string lengths up front).
+//! `init_if_needed` creates the account on first issue; re-issuing overwrites
+//! the fields in place (upsert), so verdicts update as new evidence arrives.
+//! Space is allocated at max string lengths, so no realloc is needed. The
+//! PDA seeds include the issuer's key — a different issuer derives a
+//! different PDA and can never touch another issuer's slot.
 
 use anchor_lang::prelude::*;
-use anchor_lang::system_program::{create_account, CreateAccount};
+use solana_sha256_hasher::hash;
 
 use crate::constants::*;
 use crate::error::UhakikiError;
 use crate::state::*;
 
 #[derive(Accounts)]
-#[instruction(asset_id: String, asset_class: String, rationale_uri: String)]
+#[instruction(asset_id: String, verdict: Verdict, rule_pack_hash: [u8; 32], rationale_uri: String, issuer_ref: Pubkey)]
 pub struct IssueAttestation<'info> {
     /// The rules-engine authority — must sign; its key is part of the PDA.
     #[account(mut)]
     pub issuer: Signer<'info>,
 
-    /// CHECK: PDA derived as [ATTESTATION_SEED, issuer, asset_id]. Created
-    /// here when empty; ownership + discriminator validated otherwise.
     #[account(
-        mut,
-        seeds = [ATTESTATION_SEED, issuer.key().as_ref(), asset_id.as_bytes()],
+        init_if_needed,
+        payer = issuer,
+        space = Attestation::INIT_SPACE,
+        // asset_id can be up to 64 chars — solana seeds are capped at 32 bytes,
+        // so the seed uses sha256(asset_id) (bounded, deterministic).
+        seeds = [ATTESTATION_SEED, issuer.key().as_ref(), solana_sha256_hasher::hash(asset_id.as_bytes()).as_ref()],
         bump
     )]
-    pub attestation: UncheckedAccount<'info>,
+    pub attestation: Account<'info, Attestation>,
 
     pub system_program: Program<'info, System>,
 }
@@ -34,7 +37,6 @@ pub struct IssueAttestation<'info> {
 pub fn handle_issue(
     ctx: Context<IssueAttestation>,
     asset_id: String,
-    asset_class: String,
     verdict: Verdict,
     rule_pack_hash: [u8; 32],
     rationale_uri: String,
@@ -43,48 +45,17 @@ pub fn handle_issue(
     require!(!asset_id.is_empty(), UhakikiError::InvalidAssetId);
     require!(asset_id.len() <= MAX_ASSET_ID_LEN, UhakikiError::AssetIdTooLong);
     require!(
-        asset_class.len() <= MAX_ASSET_CLASS_LEN,
-        UhakikiError::AssetClassTooLong
-    );
-    require!(
         rationale_uri.len() <= MAX_RATIONALE_URI_LEN,
         UhakikiError::RationaleUriTooLong
     );
 
-    let info = ctx.accounts.attestation.to_account_info();
-    if info.data_len() == 0 {
-        // First issue for this (issuer, asset_id): create the account.
-        let space = Attestation::INIT_SPACE;
-        let rent = Rent::get()?;
-        let lamports = rent.minimum_balance(space);
-        create_account(
-            CpiContext::new(
-                ctx.accounts.system_program.to_account_info(),
-                CreateAccount {
-                    from: ctx.accounts.issuer.to_account_info(),
-                    to: info.clone(),
-                },
-            ),
-            lamports,
-            space as u64,
-            &crate::ID(),
-        )?;
-    } else {
-        require!(
-            info.owner == &crate::ID(),
-            UhakikiError::ForeignAttestation
-        );
-        let existing = Account::<Attestation>::try_from(&info)?;
-        require!(
-            existing.issuer == ctx.accounts.issuer.key(),
-            UhakikiError::UnauthorizedIssuer
-        );
-    }
-
-    let attestation = Attestation {
+    let attestation = &mut ctx.accounts.attestation;
+    attestation.set_inner(Attestation {
         issuer: ctx.accounts.issuer.key(),
-        asset_id,
-        asset_class,
+        asset_id: asset_id.clone(),
+        // Extensible in Cape Town (land deeds etc.) — fixed for the MVP so the
+        // instruction has no two String args (Anchor 1.2 validate-macro quirk).
+        asset_class: ASSET_CLASS_INVOICE.to_string(),
         verdict,
         rule_pack_hash,
         rationale_uri,
@@ -92,16 +63,10 @@ pub fn handle_issue(
         revoked: false,
         created_at: Clock::get()?.unix_timestamp,
         bump: ctx.bumps.attestation,
-    };
-
-    // Overwrite in place: discriminator + borsh fields, bounded by INIT_SPACE.
-    let mut buf: Vec<u8> = Vec::with_capacity(8 + Attestation::INIT_SPACE);
-    buf.extend_from_slice(&Attestation::DISCRIMINATOR);
-    attestation.serialize(&mut buf)?;
-    info.data.borrow_mut()[..buf.len()].copy_from_slice(&buf);
+    });
 
     emit!(AttestationIssued {
-        asset_id: attestation.asset_id,
+        asset_id: asset_id.clone(),
         verdict: attestation.verdict,
     });
     Ok(())
