@@ -15,7 +15,7 @@ import os
 
 import httpx
 
-from engine.engine.schemas import ScreenResult, TriggeredRule, Verdict
+from engine.schemas import ScreenResult, TriggeredRule, Verdict
 
 LLM_TIMEOUT_S = 12.0
 

@@ -16,7 +16,11 @@ from .evaluator import screen
 from .loader import load_pack
 from .schemas import InvoiceSubmission, ScreenResult
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[2]  # uhakiki/ root
+import sys as _sys
+
+if str(REPO_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(REPO_ROOT))  # makes agent importable
 DEVNET = os.environ.get("UHAKIKI_CLUSTER", "devnet")
 
 pack, pack_hash = load_pack()
@@ -29,11 +33,14 @@ app = FastAPI(
 )
 
 
+PROGRAM_ID = "FEvabxdQJsdDaQuHi9fzWH7MvUygpMUS7DWUtmQkGVtd"
+
+
 @app.get("/health")
 def health() -> dict:
     return {
         "ok": True,
-        "program_id": _program_id(),
+        "program_id": PROGRAM_ID,
         "pack_id": pack.pack_id,
         "pack_hash": pack_hash,
         "cluster": DEVNET,
