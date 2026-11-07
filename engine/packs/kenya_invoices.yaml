@@ -1,0 +1,31 @@
+pack_id: kenya-invoices-v1
+jurisdiction: KE
+asset_class: invoice
+rules:
+  - id: ke-sanc-parties
+    description: "Neither party may appear on a sanctions list"
+    severity: deny
+    check: "party.sanctions_hit == false"
+  - id: ke-kyc-verified
+    description: "Both parties must be KYC-verified"
+    severity: deny
+    check: "buyer.kyc_verified and seller.kyc_verified"
+  # NOTE: every check expresses the COMPLIANT state; a rule triggers when
+  # its check evaluates False. (The build brief's ke-buyer-risk line was
+  # inconsistent with its own semantics and is corrected here.)
+  - id: ke-buyer-risk
+    description: "Buyer risk score must stay below 0.6"
+    severity: restrict
+    check: "buyer.risk_score < 0.6"
+  - id: ke-invoice-age
+    description: "Invoice must not be overdue at screening time"
+    severity: restrict
+    check: "invoice.days_until_due >= 0"
+  - id: ke-invoice-size
+    description: "Flag invoices above KES 10M for enhanced review"
+    severity: restrict
+    check: "invoice.amount_kes <= 10000000"
+  - id: ke-doc-hash
+    description: "Invoice document hash must be present"
+    severity: deny
+    check: "invoice.doc_sha256 is not none"

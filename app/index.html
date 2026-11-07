@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Uhakiki — invoice compliance on Solana</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg:#0d1117; --panel:#161b22; --raised:#1c2129; --border:#30363d;
+    --text:#e6edf3; --muted:#9da7b3; --accent:#58a6ff;
+    --allow:#15803d; --restrict:#b45309; --deny:#b91c1c;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  :focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:16px 24px;
+           border-bottom:1px solid var(--border); }
+  h1 { margin:0; font-size:1.25rem; }
+  header .tag { color:var(--muted); font-size:.85rem; }
+  header .badge { margin-left:auto; font-size:.8rem; color:var(--muted);
+                  border:1px solid var(--border); border-radius:999px; padding:3px 12px; }
+  main { max-width:1180px; margin:0 auto; padding:20px 24px;
+         display:grid; grid-template-columns:400px 1fr; gap:20px; }
+  @media (max-width:860px) { main { grid-template-columns:1fr; } }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:18px; }
+  h2 { margin:14px 0 10px; font-size:.8rem; text-transform:uppercase; letter-spacing:1.4px;
+       color:var(--muted); }
+  .intro { color:var(--muted); margin:0 0 6px; }
+  .verdict { display:inline-flex; gap:10px; align-items:center; font-size:1.5rem;
+             font-weight:800; letter-spacing:2px; padding:8px 18px; border-radius:8px; }
+  .verdict.ALLOW { background:var(--allow); color:#dcffe4; }
+  .verdict.RESTRICT { background:var(--restrict); color:#ffedd5; }
+  .verdict.DENY { background:var(--deny); color:#fee2e2; }
+  table { width:100%; border-collapse:collapse; font-size:.85rem; }
+  th,td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:500; }
+  .pill { padding:1px 10px; border-radius:999px; font-size:.75rem; font-weight:600; }
+  .pill.deny { background:#4a1216; color:#ff7b72; }
+  .pill.restrict { background:#3b2e0a; color:#e3b341; }
+  .pill.pass { background:#12351c; color:#7ee787; }
+  .explain { margin-top:12px; padding:12px 14px; border-left:3px solid var(--accent);
+             background:var(--raised); border-radius:0 8px 8px 0; font-size:.95rem; }
+  .explain .sw { margin-top:10px; color:var(--muted); }
+  button, select { width:100%; padding:10px 12px; margin-top:8px; background:var(--bg);
+                   color:var(--text); border:1px solid var(--border); border-radius:8px;
+                   font-size:.95rem; font-family:inherit; }
+  button { background:#1f6feb; border-color:#1f6feb; color:#fff; font-weight:600;
+           cursor:pointer; margin-top:14px; }
+  button:hover { background:#388bfd; } button:disabled { opacity:.55; cursor:wait; }
+  .row { display:flex; gap:8px; }
+  .attest { margin-top:14px; padding:12px 14px; border:1px dashed var(--border);
+            border-radius:8px; font-size:.85rem; }
+  code { color:var(--accent); word-break:break-all; font-family:ui-monospace,Menlo,monospace; font-size:.8rem; }
+  a { color:var(--accent); }
+  .empty { color:var(--muted); text-align:center; padding:40px 12px; }
+  .error { color:#ff7b72; }
+  label.fld { display:block; margin-top:10px; font-size:.85rem; color:var(--muted); }
+  input { width:100%; padding:8px 10px; background:var(--bg); color:var(--text);
+          border:1px solid var(--border); border-radius:8px; font-family:inherit; }
+  footer { max-width:1180px; margin:0 auto; padding:0 24px 28px; color:var(--muted); font-size:.8rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>UHAKIKI</h1>
+  <span class="tag">AI compliance agent for tokenized invoices — Solana DevNet</span>
+  <span class="badge">DevNet</span>
+</header>
+
+<main>
+  <section class="panel">
+    <p class="intro">Uhakiki screens tokenized invoices against jurisdiction rules and
+    attests every verdict onchain. The rules engine decides; the AI explains; Solana proves.</p>
+
+    <h2>Invoice (Mama Mboga scenario)</h2>
+    <label class="fld">Asset ID <input id="asset-id" value="INV-NBO-2026-0042"></label>
+    <label class="fld">Amount (KES) <input id="amount" value="500000"></label>
+    <label class="fld">Days until due <input id="due" value="60"></label>
+    <label class="fld">Document hash (sha256)
+      <input id="doc-hash" value="3f2a9c8e77b1d4c25e6a0b9d8c7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e"></label>
+
+    <h2>Buyer</h2>
+    <label class="fld">Name <input id="buyer-name" value="Nairobi Supermarket Chain"></label>
+    <label class="fld">KYC verified
+      <select id="buyer-kyc"><option value="true">yes</option><option value="false">no</option></select></label>
+    <label class="fld">Sanctions hit
+      <select id="buyer-sanc"><option value="false">no</option><option value="true">yes</option></select></label>
+    <label class="fld">Risk score (0–1) <input id="buyer-risk" value="0.3"></label>
+
+    <button id="flip" type="button">Flip scenario: sanctioned buyer (demo)</button>
+    <button id="run" type="button">Screen + attest + explain</button>
+    <div class="row">
+      <button id="reset" type="button" style="background:var(--raised);border-color:var(--border)">Reset demo data</button>
+    </div>
+    <div class="error" id="err" role="alert" hidden></div>
+  </section>
+
+  <section class="panel" aria-live="polite">
+    <h2>Result</h2>
+    <div id="placeholder" class="empty">Run a screening to see the verdict, the AI explanation
+    (English + Swahili) and the on-chain attestation.</div>
+
+    <div id="card" hidden>
+      <span class="verdict" id="verdict"></span>
+      <span style="margin-left:12px;color:var(--muted);font-size:.85rem" id="meta"></span>
+
+      <h2>Triggered rules</h2>
+      <table><thead><tr><th>Rule</th><th>Description</th><th>Severity</th></tr></thead>
+        <tbody id="rules"></tbody></table>
+
+      <div class="explain" id="explain"></div>
+
+      <div class="attest" id="attest"></div>
+    </div>
+
+    <h2>Wallet screen</h2>
+    <div class="row">
+      <input id="wallet" placeholder="Solana pubkey" value="4Nd1mBQtrMJVYVfKf2PJy9NZUZdTAsG7VMuNGrNiXq8c" style="margin-top:8px">
+      <button id="wsc" type="button" style="width:auto;padding:8px 16px">Check</button>
+    </div>
+    <div id="wreport" style="margin-top:10px;font-size:.85rem;color:var(--muted)"></div>
+  </section>
+</main>
+
+<footer>Demo software · Solana DevNet · mock sanctions/KYC data, clearly labeled · not legal advice</footer>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const API = (location.port === "8000" || !location.port) ? "http://127.0.0.1:8000" : "";
+
+function cleanInvoice() {
+  $("buyer-kyc").value = "true"; $("buyer-sanc").value = "false";
+  $("buyer-risk").value = "0.3"; $("buyer-name").value = "Nairobi Supermarket Chain";
+}
+
+$("flip").onclick = () => {
+  $("buyer-kyc").value = "true"; $("buyer-sanc").value = "true";
+  $("buyer-risk").value = "0.9"; $("buyer-name").value = "Sanctioned Buyer (demo)";
+};
+
+$("reset").onclick = cleanInvoice;
+
+function collect() {
+  return {
+    asset_id: $("asset-id").value.trim(),
+    seller: { name: "Mama Mboga Logistics", wallet: "4Nd1mBQtrMJVYVfKf2PJy9NZUZdTAsG7VMuNGrNiXq8c",
+              kyc_verified: true, sanctions_hit: false, risk_score: 0.2 },
+    buyer: { name: $("buyer-name").value, wallet: "9gTAgF5YmGZK4GjwKLonBj7CqK9fGrPnNDdtHq7LypqD",
+             kyc_verified: $("buyer-kyc").value === "true",
+             sanctions_hit: $("buyer-sanc").value === "true",
+             risk_score: parseFloat($("buyer-risk").value) || 0 },
+    amount_kes: parseFloat($("amount").value) || 0,
+    days_until_due: parseInt($("due").value, 10) || 0,
+    doc_sha256: $("doc-hash").value.trim() || null,
+  };
+}
+
+const SYM = { ALLOW: "✓", RESTRICT: "!", DENY: "✕" };
+
+async function post(path, body) {
+  const r = await fetch(API + path, { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+  return r.json();
+}
+
+$("run").onclick = async () => {
+  $("err").hidden = true; $("card").hidden = true;
+  $("placeholder").hidden = false;
+  $("placeholder").textContent = "Rules engine running — screening, attesting, explaining…";
+  try {
+    const result = await post("/screen", collect());
+    const [expl, att] = await Promise.all([post("/explain", result), post("/attest", result)]);
+
+    $("placeholder").hidden = true; $("card").hidden = false;
+    const v = $("verdict");
+    v.textContent = SYM[result.verdict] + " " + result.verdict;
+    v.className = "verdict " + result.verdict;
+    $("meta").textContent = result.asset_id + " · pack " + result.rule_pack_id +
+      " · " + result.rule_pack_hash.slice(0, 12) + "…";
+
+    $("rules").innerHTML = result.triggered_rules.length
+      ? result.triggered_rules.map(t => `<tr><td><code>${t.rule_id}</code></td><td>${t.description}</td>` +
+        `<td><span class="pill ${t.severity}">${t.severity}</span></td></tr>`).join("")
+      : '<tr><td colspan="3"><span class="pill pass">no rule triggered</span></td></tr>';
+
+    $("explain").innerHTML =
+      `<strong>${expl.mode === "llm" ? "AI" : "AI (grounded template)"}</strong> — ${expl.explanation_en}` +
+      `<div class="sw"><strong>Kiswahili:</strong> ${expl.explanation_sw}</div>`;
+
+    const a = att.mode === "simulated"
+      ? `🔗 Attestation: <strong>SIMULATED</strong> — <code>${att.signature}</code><br>${att.note}`
+      : `🔗 Attestation on DevNet: <a href="${att.explorer_url}" target="_blank" rel="noopener">tx ${att.signature.slice(0, 16)}…</a>` +
+        ` · PDA <code>${att.attestation_pda}</code>`;
+    $("attest").innerHTML = a;
+  } catch (e) {
+    $("placeholder").hidden = true;
+    $("err").hidden = false; $("err").textContent = "Error: " + e.message;
+  }
+};
+
+$("wsc").onclick = async () => {
+  $("wreport").textContent = "checking…";
+  try {
+    const r = await post("/wallet-screen", { wallet: $("wallet").value.trim() });
+    $("wreport").innerHTML = `<strong>${r.tx_count}</strong> recent txs — ${r.summary_en}`;
+  } catch (e) { $("wreport").innerHTML = '<span class="error">' + e.message + "</span>"; }
+};
+</script>
+</body>
+</html>
