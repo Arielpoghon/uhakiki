@@ -1,0 +1,15 @@
+# Render Blueprint — hosted Uhakiki demo.
+# Serves the real dashboard with the captured live-run responses (real
+# on-chain tx signatures). The live flow runs from the repo:
+# ./scripts/demo_e2e.sh (local validator, no faucet needed).
+services:
+  - type: web
+    name: uhakiki
+    runtime: python
+    plan: free
+    buildCommand: pip install fastapi==0.128.0 uvicorn==0.44.0
+    startCommand: uvicorn replay_api:app --host 0.0.0.0 --port $PORT --app-dir engine
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.9"
