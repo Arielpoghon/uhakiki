@@ -129,7 +129,7 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const API = (location.port === "8000" || !location.port) ? "http://127.0.0.1:8000" : "";
+const API = "";  // same-origin: the API serves this dashboard (local uvicorn AND Render)
 
 function cleanInvoice() {
   $("buyer-kyc").value = "true"; $("buyer-sanc").value = "false";
