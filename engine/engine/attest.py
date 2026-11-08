@@ -42,11 +42,8 @@ def _load_keypair() -> Keypair:
             "UHAKIKI_ATTESTER_KEY not set — expected a base58 secret key "
             "or a path to a solana-keygen JSON file"
         )
-    if raw.startswith("[") or raw.endswith(".json"):
-        if raw.endswith(".json"):
-            arr = json.loads(open(raw).read())
-        else:
-            arr = json.loads(raw)
+    if raw.endswith(".json"):
+        arr = json.load(open(raw))
         return Keypair.from_bytes(bytes(arr))
     return Keypair.from_base58_string(raw)
 
@@ -60,13 +57,13 @@ def _rpc(http: httpx.Client, method: str, params: list) -> dict:
     return body["result"]
 
 
-def attest(result) -> dict:
+def attest(result, keypair: Keypair | None = None) -> dict:
     """Send issue_attestation for a ScreenResult. Returns explorer links."""
-    kp = _load_keypair()
+    kp = keypair if keypair is not None else _load_keypair()
     http = httpx.Client(timeout=30)
 
     asset_id = result.asset_id
-    # PDA seeds mirror the program: asset_id is hashed (seed length cap 32)
+    # PDA seeds mirror the program: asset_id is hashed (solana seed cap 32)
     id_hash = hashlib.sha256(asset_id.encode("utf-8")).digest()
     pda, bump = Pubkey.find_program_address([SEED, bytes(kp.pubkey()), id_hash], PROGRAM_ID)
 
@@ -85,16 +82,13 @@ def attest(result) -> dict:
     ix = Instruction(PROGRAM_ID, bytes(data), accounts)
 
     blockhash_raw = _rpc(http, "getLatestBlockhash", [])["value"]["blockhash"]
-    blockhash = hashlib.sha256(base64.b64decode(blockhash_raw)).digest()  # placeholder replaced below
-    # solders accepts the base58 blockhash directly via Hash:
     from solders.hash import Hash
 
     blockhash = Hash.from_string(blockhash_raw)
     msg = Message.new_with_blockhash([ix], kp.pubkey(), blockhash)
     tx = Transaction([kp], msg, blockhash)
-    import base64 as _b64
 
-    encoded = _b64.b64encode(bytes(tx)).decode()
+    encoded = base64.b64encode(bytes(tx)).decode()
     signature = _rpc(http, "sendTransaction",
                      [encoded, {"encoding": "base64", "skip_preflight": False}])
     return {

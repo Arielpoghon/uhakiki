@@ -9,33 +9,56 @@ export PATH="$HOME/.local/share/solana/agave-4.4.1/bin:$HOME/.cargo/bin:$PATH"
 MODE="${1:-localnet}"
 if [ "$MODE" = "devnet" ]; then
   : "${UHAKIKI_ATTESTER_KEY:?set UHAKIKI_ATTESTER_KEY (path to solana-keygen JSON) for devnet}"
+  export UHAKIKI_RPC_URL="https://api.devnet.solana.com"
   echo "[uhakiki] cluster: DevNet"
 else
+  echo "[uhakiki] killing any stale validators…"
+  pkill -f '[s]olana-test-validator' 2>/dev/null || true
+  sleep 2
   echo "[uhakiki] starting local validator with the Uhakiki program…"
   solana-test-validator --reset \
     --bpf-program FEvabxdQJsdDaQuHi9fzWH7MvUygpMUS7DWUtmQkGVtd target/deploy/uhakiki.so \
     > /tmp/uhakiki-validator.log 2>&1 &
   VALIDATOR_PID=$!
   trap 'kill $VALIDATOR_PID 2>/dev/null || true' EXIT
-  sleep 6
+  # wait for RPC health (up to 60s)
+  for i in $(seq 1 30); do
+    curl -s -m 2 http://127.0.0.1:8899 -X POST -H 'Content-Type: application/json' \
+      -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' | grep -q ok && break
+    sleep 2
+  done
   echo "[uhakiki] validator up (pid $VALIDATOR_PID)"
-  solana airdrop 5 --url localhost >/dev/null 2>&1 || true
+  export UHAKIKI_RPC_URL="http://127.0.0.1:8899"
 fi
-
-# attester key: on localnet, generate a fresh funded one
-if [ "$MODE" = "localnet" ]; then
-  ATTESTER_JSON=$(mktemp /tmp/uhakiki-attester-XXXX.json)
-  solana-keygen new -o "$ATTESTER_JSON" --force --no-passphrase >/dev/null
-  solana airdrop 10 --url localhost -k "$ATTESTER_JSON" >/dev/null 2>&1 || \
-  for i in 1 2 3; do solana airdrop 5 --url localhost -k "$ATTESTER_JSON" >/dev/null 2>&1 && break; sleep 2; done
-  export UHAKIKI_ATTESTER_KEY="$ATTESTER_JSON"
-fi
-echo "[uhakiki] attester: $(solana address -k "$UHAKIKI_ATTESTER_KEY" 2>/dev/null || echo '?')"
 
 cd engine
 .venv/bin/python - << 'PYEOF'
-import os, sys
+import os, sys, json, time
 sys.path.insert(0, "."); sys.path.insert(0, "..")
+import httpx
+RPC = os.environ["UHAKIKI_RPC_URL"]
+http = httpx.Client(timeout=30)
+
+# on localnet: fresh keypair, funded via RPC (in-process — no key files)
+from solders.keypair import Keypair
+if os.environ.get("UHAKIKI_ATTESTER_KEY"):
+    kp = Keypair.from_bytes(bytes(json.load(open(os.environ["UHAKIKI_ATTESTER_KEY"]))))
+else:
+    kp = Keypair()
+    for i in range(15):
+        r = http.post(RPC, json={"jsonrpc": "2.0", "id": 1, "method": "requestAirdrop",
+                                 "params": [str(kp.pubkey()), 10_000_000_000]}).json()
+        if "result" in r:
+            break
+        if i == 14:
+            print("[e2e] FATAL: airdrop failed:", str(r.get("error"))[:120])
+            sys.exit(1)
+        time.sleep(2)
+bal = http.post(RPC, json={"jsonrpc": "2.0", "id": 1, "method": "getBalance",
+                           "params": [str(kp.pubkey())]}).json()["result"]["value"]
+print(f"[e2e] attester {kp.pubkey()} balance: {bal / 1e9} SOL")
+assert bal >= 1_000_000_000, "attester unfunded"
+
 from engine.loader import load_pack
 from engine.evaluator import screen
 from engine.schemas import InvoiceSubmission
@@ -55,10 +78,8 @@ for label, inv in (("CLEAN (Mama Mboga)", clean), ("SANCTIONED buyer", dirty)):
     print("rules:", [t.rule_id for t in r.triggered_rules] or "none")
     print("EN:", e["explanation_en"][:90], "…")
     print("SW:", e["explanation_sw"][:90], "…")
-    try:
-        a = attest(r)
-        print("ATTESTED onchain:", a["signature"][:28], "…")
-        print("explorer:", a["explorer_url"])
-    except Exception as exc:
-        print("ATTEST FAILED:", str(exc)[:200])
+    a = attest(r, keypair=kp)
+    print("ATTESTED onchain:", a["signature"][:28], "…")
+    print("explorer:", a["explorer_url"])
+print("UHAKIKI END-TO-END: verdicts attested onchain")
 PYEOF

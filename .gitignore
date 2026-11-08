@@ -9,3 +9,4 @@ engine/.venv/
 engine/**/__pycache__/
 audit/
 test-ledger/
+.attester.json
